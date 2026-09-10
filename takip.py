@@ -1,4 +1,5 @@
 import os
+import time
 import requests
 from bs4 import BeautifulSoup
 
@@ -76,8 +77,12 @@ def duyurulari_kontrol_et():
                     f"🔗 [Duyuruya Gitmek İçin Tıkla]({href})"
                 )
 
-                telegram_bildirim_gonder(mesaj)
-                print(f"Hedef duyuru bulundu ve bildirildi: {baslik}")
+                # 5 kez 5 saniye arayla bildirim gönder (kaçırılmasın diye)
+                for i in range(5):
+                    telegram_bildirim_gonder(f"🔔 [{i+1}/5] {mesaj}")
+                    print(f"Bildirim {i+1}/5 gönderildi: {baslik}")
+                    if i < 4:
+                        time.sleep(5)
 
                 with open("gonderilen_duyurular.txt", "a", encoding="utf-8") as f:
                     f.write(href + "\n")
@@ -86,6 +91,7 @@ def duyurulari_kontrol_et():
 
         if not yeni_duyuru_bulundu:
             print("Yeni hedef duyuru bulunamadı.")
+            telegram_bildirim_gonder("✅ *Kontrol tamamlandı.* Yeni İKM/sözlü sınav duyurusu bulunamadı.")
 
     except Exception as e:
         print(f"Hata oluştu: {e}")
