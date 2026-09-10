@@ -1,4 +1,5 @@
 import os
+import time
 import requests
 from bs4 import BeautifulSoup
 
@@ -76,8 +77,12 @@ def duyurulari_kontrol_et():
                     f"🔗 [Duyuruya Gitmek İçin Tıkla]({href})"
                 )
 
-                telegram_bildirim_gonder(mesaj)
-                print(f"Hedef duyuru bulundu ve bildirildi: {baslik}")
+                # 5 kez 5 saniye arayla bildirim gönder (kaçırılmasın diye)
+                for i in range(5):
+                    telegram_bildirim_gonder(f"🔔 [{i+1}/5] {mesaj}")
+                    print(f"Bildirim {i+1}/5 gönderildi: {baslik}")
+                    if i < 4:
+                        time.sleep(5)
 
                 with open("gonderilen_duyurular.txt", "a", encoding="utf-8") as f:
                     f.write(href + "\n")
@@ -91,11 +96,29 @@ def duyurulari_kontrol_et():
     except Exception as e:
         print(f"Hata oluştu: {e}")
 
+def test_bildirimi_gonder():
+    """Test amaçlı sahte duyuru bildirimi gönderir."""
+    print("TEST MODU: Sahte duyuru bildirimi gönderiliyor...")
+    mesaj = (
+        "📢 *BEKLENEN DUYURU GELDİ!*\n\n"
+        "📌 *Başlık:* 2026 Yılı İKM Sözlü Sınav Sonuçları (TEST)\n\n"
+        "🔗 [Duyuruya Gitmek İçin Tıkla](https://balikesir.adalet.gov.tr/test-duyuru)"
+    )
+    for i in range(5):
+        telegram_bildirim_gonder(f"🔔 [{i+1}/5] {mesaj}")
+        print(f"Test bildirim {i+1}/5 gönderildi")
+        if i < 4:
+            time.sleep(5)
+
 if __name__ == "__main__":
     if not TELEGRAM_TOKEN or not CHAT_ID:
         print("HATA: TELEGRAM_TOKEN ve CHAT_ID environment variable'ları ayarlanmalı!")
         exit(1)
 
-    print("İKM Duyuru Takip - Tek seferlik kontrol başlatılıyor...")
-    duyurulari_kontrol_et()
-    print("Kontrol tamamlandı.")
+    # TEST_MODE=true ise sahte duyuru gönder
+    if os.environ.get("TEST_MODE", "").lower() == "true":
+        test_bildirimi_gonder()
+    else:
+        print("İKM Duyuru Takip - Tek seferlik kontrol başlatılıyor...")
+        duyurulari_kontrol_et()
+        print("Kontrol tamamlandı.")
