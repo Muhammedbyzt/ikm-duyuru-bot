@@ -1,9 +1,11 @@
 name: İKM Duyuru Takip
 
 on:
+  push:
+    branches: [test]           # Test branch'ine push yapınca çalışsın
   schedule:
-    - cron: '*/10 * * * *'  # Her 10 dakikada bir
-  workflow_dispatch: {}       # Manuel tetikleme butonu
+    - cron: '*/10 * * * *'
+  workflow_dispatch: {}
 
 jobs:
   kontrol:
