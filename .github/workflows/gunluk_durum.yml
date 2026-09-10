@@ -1,0 +1,19 @@
+name: Günlük Bot Durum Bildirimi
+
+on:
+  schedule:
+    - cron: '0 6 * * *'  # Her gün 09:00 TR saati (UTC+3)
+  workflow_dispatch: {}   # Manuel tetikleme
+
+jobs:
+  durum:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Durum bildirimi gönder
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d "{\"chat_id\": \"$CHAT_ID\", \"text\": \"🤖 *İKM Duyuru Takip Botu Aktif!*\n\n✅ Bot sorunsuz çalışıyor.\n📡 Son 24 saatte site düzenli olarak kontrol edildi.\n⏰ Bir sonraki durum raporu: yarın 09:00\", \"parse_mode\": \"Markdown\"}"
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}

@@ -91,7 +91,6 @@ def duyurulari_kontrol_et():
 
         if not yeni_duyuru_bulundu:
             print("Yeni hedef duyuru bulunamadı.")
-            telegram_bildirim_gonder("✅ *Kontrol tamamlandı.* Yeni İKM/sözlü sınav duyurusu bulunamadı.")
 
     except Exception as e:
         print(f"Hata oluştu: {e}")
