@@ -30,6 +30,7 @@ bot_durum = {
 _durum_kilidi = threading.Lock()
 _thread_kilidi = threading.Lock()
 _bot_thread = None
+_bot_process_id = None
 
 
 def _simdi():
@@ -50,18 +51,18 @@ def bot_dongusu():
     son_durum_tarihi = None
     _durum_guncelle(calisiyor=True, baslangic=_zaman_metni())
 
-    baslangic_mesaji = (
-        "🚀 <b>İKM Duyuru Takip Botu Başlatıldı!</b>\n"
-        "Bot aktif ve her 10 dakikada bir kontrol yapacak."
-    )
-    if telegram_bildirim_gonder(baslangic_mesaji):
-        _durum_guncelle(son_telegram_hatasi=None)
-    else:
-        _durum_guncelle(
-            son_telegram_hatasi="Başlangıç bildirimi Telegram'a gönderilemedi."
-        )
-
     try:
+        baslangic_mesaji = (
+            "🚀 <b>İKM Duyuru Takip Botu Başlatıldı!</b>\n"
+            "Bot aktif ve her 10 dakikada bir kontrol yapacak."
+        )
+        if telegram_bildirim_gonder(baslangic_mesaji):
+            _durum_guncelle(son_telegram_hatasi=None)
+        else:
+            _durum_guncelle(
+                son_telegram_hatasi="Başlangıç bildirimi Telegram'a gönderilemedi."
+            )
+
         while True:
             simdi = _simdi()
             _durum_guncelle(son_kontrol=_zaman_metni(simdi))
@@ -111,10 +112,17 @@ def bot_dongusu():
 
 
 def botu_baslat():
-    """Gunicorn import ederken bot thread'ini bir kez başlatır."""
-    global _bot_thread
+    """Bulunulan worker prosesinde bot thread'ini bir kez başlatır."""
+    global _bot_process_id, _bot_thread
+
+    process_id = os.getpid()
 
     with _thread_kilidi:
+        # Preload/fork sonrasında parent'tan kopyalanmış Thread nesnesi geçersizdir.
+        if _bot_process_id != process_id:
+            _bot_thread = None
+            _bot_process_id = None
+
         if _bot_thread is not None and _bot_thread.is_alive():
             return True
 
@@ -136,14 +144,24 @@ def botu_baslat():
             name="duyuru-kontrol",
             daemon=True,
         )
+        _bot_process_id = process_id
         _bot_thread.start()
-        print("Bot arka planda başlatıldı.", flush=True)
+        print(
+            f"Bot arka planda başlatıldı (process: {process_id}).",
+            flush=True,
+        )
         return True
 
 
 def _saglik_durumu():
+    process_id = os.getpid()
     with _thread_kilidi:
-        thread_calisiyor = _bot_thread is not None and _bot_thread.is_alive()
+        thread_calisiyor = (
+            _bot_process_id == process_id
+            and _bot_thread is not None
+            and _bot_thread.is_alive()
+        )
+        bot_process_id = _bot_process_id
 
     with _durum_kilidi:
         sonuc = dict(bot_durum)
@@ -164,6 +182,9 @@ def _saglik_durumu():
         {
             "durum": durum,
             "bot_calisiyor": thread_calisiyor,
+            "bot_process_id": bot_process_id,
+            "calisiyor": thread_calisiyor,
+            "process_id": process_id,
             "yapilandirildi": yapilandirildi,
         }
     )
@@ -178,12 +199,15 @@ def saglik():
     return jsonify(veri), durum_kodu
 
 
-# Gunicorn `app:app` modülünü import ettiği için thread burada başlatılmalıdır.
-botu_baslat()
+@app.before_request
+def bot_threadini_hazir_tut():
+    """Worker yenilenirse ilk istekte bot thread'ini tekrar hazırlar."""
+    if TELEGRAM_TOKEN and CHAT_ID:
+        botu_baslat()
 
 
 if __name__ == "__main__":
-    if not TELEGRAM_TOKEN or not CHAT_ID:
+    if not botu_baslat():
         raise SystemExit(1)
 
     port = int(os.environ.get("PORT", "5000"))
