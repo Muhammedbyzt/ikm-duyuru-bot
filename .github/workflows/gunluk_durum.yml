@@ -1,9 +1,9 @@
-name: Günlük Bot Durum Bildirimi
+name: Günlük Bot Durum Bildirimi (Devre Dışı)
+
+# Bot artık Render üzerinde çalışıyor, günlük bildirim de oradan geliyor.
 
 on:
-  schedule:
-    - cron: '0 6 * * *'  # Her gün 09:00 TR saati (UTC+3)
-  workflow_dispatch: {}   # Manuel tetikleme
+  workflow_dispatch: {}  # Sadece manuel tetikleme
 
 jobs:
   durum:

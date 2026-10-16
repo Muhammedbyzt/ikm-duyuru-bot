@@ -1,16 +1,18 @@
-name: İKM Duyuru Takip
+name: İKM Duyuru Takip (GitHub Actions - Devre Dışı)
+
+# Bot artık Render üzerinde çalışıyor.
+# Bu workflow sadece yedek olarak saklanıyor.
+# Manuel çalıştırmak istersen "Run workflow" butonunu kullan.
 
 on:
-  schedule:
-    - cron: '*/10 * * * *'  # Her 10 dakikada bir
-  workflow_dispatch: {}       # Manuel tetikleme butonu
+  workflow_dispatch: {}  # Sadece manuel tetikleme
 
 jobs:
   kontrol:
     runs-on: ubuntu-latest
 
     permissions:
-      contents: write  # git push için gerekli
+      contents: write
 
     steps:
       - name: Repo'yu indir
@@ -22,7 +24,7 @@ jobs:
           python-version: '3.12'
 
       - name: Bağımlılıkları yükle
-        run: pip install -r requirements.txt
+        run: pip install requests beautifulsoup4
 
       - name: Duyuruları kontrol et
         run: python takip.py
