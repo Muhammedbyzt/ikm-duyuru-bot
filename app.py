@@ -1,77 +1,190 @@
 import os
-import time
 import threading
-from datetime import datetime, timezone, timedelta
+import time
+from datetime import datetime, timedelta, timezone
+
 from flask import Flask, jsonify
-from takip import duyurulari_kontrol_et, telegram_bildirim_gonder, TELEGRAM_TOKEN, CHAT_ID
+
+from takip import (
+    CHAT_ID,
+    TELEGRAM_TOKEN,
+    duyurulari_kontrol_et,
+    telegram_bildirim_gonder,
+)
+
 
 app = Flask(__name__)
 
-# Türkiye saat dilimi (UTC+3)
 TR_TZ = timezone(timedelta(hours=3))
+KONTROL_ARALIGI = 600  # 10 dakika
 
-# Bot durumu
 bot_durum = {
-    "son_kontrol": None,
     "calisiyor": False,
-    "baslangic": None
+    "baslangic": None,
+    "son_kontrol": None,
+    "son_basarili_kontrol": None,
+    "son_tarama_hatasi": None,
+    "son_telegram_hatasi": None,
 }
 
+_durum_kilidi = threading.Lock()
+_thread_kilidi = threading.Lock()
+_bot_thread = None
+
+
+def _simdi():
+    return datetime.now(TR_TZ)
+
+
+def _zaman_metni(zaman=None):
+    return (zaman or _simdi()).strftime("%d.%m.%Y %H:%M:%S")
+
+
+def _durum_guncelle(**degerler):
+    with _durum_kilidi:
+        bot_durum.update(degerler)
+
+
 def bot_dongusu():
-    """Bot'un ana döngüsü - arka planda sürekli çalışır."""
-    KONTROL_ARALIGI = 600  # 10 dakika
+    """Duyuru kontrolünü arka planda sürekli çalıştırır."""
     son_durum_tarihi = None
+    _durum_guncelle(calisiyor=True, baslangic=_zaman_metni())
 
-    bot_durum["calisiyor"] = True
-    bot_durum["baslangic"] = datetime.now(TR_TZ).strftime("%d.%m.%Y %H:%M")
+    baslangic_mesaji = (
+        "🚀 <b>İKM Duyuru Takip Botu Başlatıldı!</b>\n"
+        "Bot aktif ve her 10 dakikada bir kontrol yapacak."
+    )
+    if telegram_bildirim_gonder(baslangic_mesaji):
+        _durum_guncelle(son_telegram_hatasi=None)
+    else:
+        _durum_guncelle(
+            son_telegram_hatasi="Başlangıç bildirimi Telegram'a gönderilemedi."
+        )
 
-    # Başlangıç bildirimi
-    telegram_bildirim_gonder("🚀 *İKM Duyuru Takip Botu Başlatıldı!*\nBot aktif ve çalışıyor. Her 10 dakikada bir kontrol edilecek.")
+    try:
+        while True:
+            simdi = _simdi()
+            _durum_guncelle(son_kontrol=_zaman_metni(simdi))
 
-    while True:
-        try:
-            simdi = datetime.now(TR_TZ)
-            bot_durum["son_kontrol"] = simdi.strftime("%H:%M:%S")
-
-            # Duyuru kontrolü
-            duyurulari_kontrol_et()
-
-            # Günlük durum bildirimi (her gün saat 09:00-09:10 arasında bir kez)
-            bugun = simdi.strftime("%Y-%m-%d")
-            if son_durum_tarihi != bugun and simdi.hour == 9:
-                telegram_bildirim_gonder(
-                    "🤖 *İKM Duyuru Takip Botu Aktif!*\n\n"
-                    "✅ Bot sorunsuz çalışıyor.\n"
-                    f"📡 Son kontrol: {bot_durum['son_kontrol']}\n"
-                    f"🕐 Çalışma başlangıcı: {bot_durum['baslangic']}\n"
-                    "⏰ Bir sonraki durum raporu: yarın 09:00"
+            try:
+                sonuc = duyurulari_kontrol_et()
+                _durum_guncelle(
+                    son_basarili_kontrol=_zaman_metni(),
+                    son_tarama_hatasi=None,
                 )
-                son_durum_tarihi = bugun
 
-        except Exception as e:
-            print(f"Bot döngüsü hatası: {e}")
+                if sonuc["telegram_hatasi"]:
+                    _durum_guncelle(
+                        son_telegram_hatasi=sonuc["telegram_hatasi"]
+                    )
+                elif sonuc["bildirilen"]:
+                    _durum_guncelle(son_telegram_hatasi=None)
 
-        time.sleep(KONTROL_ARALIGI)
+                bugun = simdi.strftime("%Y-%m-%d")
+                if son_durum_tarihi != bugun and simdi.hour == 9:
+                    durum_mesaji = (
+                        "🤖 <b>İKM Duyuru Takip Botu Aktif!</b>\n\n"
+                        "✅ Bot sorunsuz çalışıyor.\n"
+                        f"📡 Son kontrol: {_zaman_metni()}\n"
+                        f"🕐 Çalışma başlangıcı: {bot_durum['baslangic']}\n"
+                        "⏰ Bir sonraki durum raporu: yarın 09:00"
+                    )
+                    if telegram_bildirim_gonder(durum_mesaji):
+                        son_durum_tarihi = bugun
+                        _durum_guncelle(son_telegram_hatasi=None)
+                    else:
+                        _durum_guncelle(
+                            son_telegram_hatasi=(
+                                "Günlük durum bildirimi Telegram'a gönderilemedi."
+                            )
+                        )
 
-@app.route("/")
-def anasayfa():
-    """Sağlık kontrolü endpoint'i - Render ve UptimeRobot için."""
-    return jsonify({
-        "durum": "aktif",
-        "bot_calisiyor": bot_durum["calisiyor"],
-        "son_kontrol": bot_durum["son_kontrol"],
-        "baslangic": bot_durum["baslangic"]
-    })
+            except Exception as hata:
+                # Hata metnine token içeren bir istek URL'si yazdırmıyoruz.
+                hata_metni = f"{type(hata).__name__}: {hata}"
+                _durum_guncelle(son_tarama_hatasi=hata_metni)
+                print(f"Bot döngüsü hatası: {hata_metni}", flush=True)
+
+            time.sleep(KONTROL_ARALIGI)
+    finally:
+        _durum_guncelle(calisiyor=False)
+
+
+def botu_baslat():
+    """Gunicorn import ederken bot thread'ini bir kez başlatır."""
+    global _bot_thread
+
+    with _thread_kilidi:
+        if _bot_thread is not None and _bot_thread.is_alive():
+            return True
+
+        if not TELEGRAM_TOKEN or not CHAT_ID:
+            _durum_guncelle(
+                calisiyor=False,
+                son_telegram_hatasi=(
+                    "TELEGRAM_TOKEN ve CHAT_ID environment variable'ları eksik."
+                ),
+            )
+            print(
+                "HATA: TELEGRAM_TOKEN ve CHAT_ID environment variable'ları ayarlanmalı!",
+                flush=True,
+            )
+            return False
+
+        _bot_thread = threading.Thread(
+            target=bot_dongusu,
+            name="duyuru-kontrol",
+            daemon=True,
+        )
+        _bot_thread.start()
+        print("Bot arka planda başlatıldı.", flush=True)
+        return True
+
+
+def _saglik_durumu():
+    with _thread_kilidi:
+        thread_calisiyor = _bot_thread is not None and _bot_thread.is_alive()
+
+    with _durum_kilidi:
+        sonuc = dict(bot_durum)
+
+    yapilandirildi = bool(TELEGRAM_TOKEN and CHAT_ID)
+    saglikli = yapilandirildi and thread_calisiyor
+    uyari_var = bool(
+        sonuc["son_tarama_hatasi"] or sonuc["son_telegram_hatasi"]
+    )
+    if not saglikli:
+        durum = "hata"
+    elif uyari_var:
+        durum = "uyari"
+    else:
+        durum = "aktif"
+
+    sonuc.update(
+        {
+            "durum": durum,
+            "bot_calisiyor": thread_calisiyor,
+            "yapilandirildi": yapilandirildi,
+        }
+    )
+    return sonuc, 200 if saglikli else 503
+
+
+@app.get("/")
+@app.get("/health")
+def saglik():
+    """Render ve UptimeRobot için sağlık kontrolü."""
+    veri, durum_kodu = _saglik_durumu()
+    return jsonify(veri), durum_kodu
+
+
+# Gunicorn `app:app` modülünü import ettiği için thread burada başlatılmalıdır.
+botu_baslat()
+
 
 if __name__ == "__main__":
     if not TELEGRAM_TOKEN or not CHAT_ID:
-        print("HATA: TELEGRAM_TOKEN ve CHAT_ID environment variable'ları ayarlanmalı!")
-        exit(1)
+        raise SystemExit(1)
 
-    # Bot thread'ini başlat
-    bot_thread = threading.Thread(target=bot_dongusu, daemon=True)
-    bot_thread.start()
-
-    # Flask sunucusunu başlat
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    port = int(os.environ.get("PORT", "5000"))
+    app.run(host="0.0.0.0", port=port, threaded=True)

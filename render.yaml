@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: ikm-duyuru-botu
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --workers 1 --threads 2 app:app
+    healthCheckPath: /health
+    envVars:
+      - key: TELEGRAM_TOKEN
+        sync: false
+      - key: CHAT_ID
+        sync: false
+      - key: PYTHONUNBUFFERED
+        value: "1"

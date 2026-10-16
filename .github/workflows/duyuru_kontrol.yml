@@ -1,9 +1,9 @@
-name: İKM Duyuru Takip
+name: İKM Duyuru Takip (Otomatik Çalışma Devre Dışı)
+
+# Bot Render üzerinde çalışıyor. Bu workflow yalnızca elle tetiklenebilir.
 
 on:
-  schedule:
-    - cron: '*/10 * * * *'  # Her 10 dakikada bir
-  workflow_dispatch: {}       # Manuel tetikleme butonu
+  workflow_dispatch: {}
 
 jobs:
   kontrol:
